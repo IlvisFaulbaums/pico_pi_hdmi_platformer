@@ -21,7 +21,6 @@ You can run them by simply opening html on your browser.
 You can also edit tiles in jpg format in some painting app 10x10 pixels and then open them one by one in TileEditor.html.<br>
 ![Demo](hdmi_pico_platformer.gif)
 <br>
-<img src="for_readme/1749552050325.jpg" alt="Demo" width="300"/>
-![Demo](for_readme/1749552050325.jpg)
-![Demo](for_readme/1749552050377.jpg)
-![Demo](for_readme/1749552050248.jpg)
+<img src="for_readme/1749552050325.jpg" alt="Demo" width="400"/>
+<img src="for_readme/1749552050377.jpg" alt="Demo" width="400"/>
+<img src="for_readme/1749552050248.jpg" alt="Demo" width="400"/>
