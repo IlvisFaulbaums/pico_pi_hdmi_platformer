@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Universal Level Editor</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; }
+    canvas { border: 1px solid black; cursor: crosshair; margin: 10px auto; display: block; }
+    button {
+      font-size: 16px;
+      margin: 5px;
+      padding: 8px 16px;
+      cursor: pointer;
+      border: 2px solid #ccc;
+      background: white;
+      border-radius: 4px;
+    }
+    button.selected {
+      border-color: #333;
+      background: #ddd;
+      font-weight: bold;
+    }
+    #output {
+      text-align: left;
+      max-width: 90%;
+      margin: 10px auto;
+      white-space: pre-wrap;
+      font-family: monospace;
+      background: #f0f0f0;
+      padding: 10px;
+      border-radius: 6px;
+      user-select: all;
+    }
+    input[type="number"] {
+      width: 60px;
+      font-size: 16px;
+      padding: 4px;
+      margin: 4px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Universal Level Editor</h1>
+
+  <div>
+    <label>Columns: <input type="number" id="colsInput" value="20" min="1"></label>
+    <label>Rows: <input type="number" id="rowsInput" value="15" min="1"></label>
+    <button onclick="initializeGrid()">Generate Grid</button>
+  </div>
+
+  <div id="brushButtons"></div>
+
+  <canvas id="editorCanvas"></canvas><br>
+
+  <button onclick="undo()">Undo</button>
+  <button onclick="redo()">Redo</button>
+  <button onclick="exportLevel()">Export Level</button>
+
+  <pre id="output"></pre>
+
+  <script>
+    const canvas = document.getElementById("editorCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const tileSize = 24;
+    let cols = 20;
+    let rows = 15;
+    let level = [];
+
+    const TILE = {
+      EMPTY: 0,
+      PLAYER: 1,
+      GOAL: 2,
+      OBSTACLE: 3,
+      WATER: 4,
+      ENEMY: 5
+    };
+
+    const tileInfo = {
+      [TILE.EMPTY]:   { name: "Empty",    color: "#ffffff" },
+      [TILE.PLAYER]:  { name: "Player",   color: "#ff4444" },
+      [TILE.GOAL]:    { name: "Goal",     color: "#4444ff" },
+      [TILE.OBSTACLE]:{ name: "Obstacle", color: "#444444" },
+      [TILE.WATER]:   { name: "Water",    color: "#00ccff" },
+      [TILE.ENEMY]:   { name: "Enemy",    color: "#ff8800" }
+    };
+
+    let currentBrush = TILE.EMPTY;
+    let isPainting = false;
+    let undoStack = [];
+    let redoStack = [];
+
+    function initializeGrid() {
+      cols = parseInt(document.getElementById("colsInput").value);
+      rows = parseInt(document.getElementById("rowsInput").value);
+      canvas.width = cols * tileSize;
+      canvas.height = rows * tileSize;
+      level = Array.from({ length: rows }, () => Array(cols).fill(TILE.EMPTY));
+      undoStack = [];
+      redoStack = [];
+      drawGrid();
+    }
+
+    function drawGrid() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          ctx.fillStyle = tileInfo[level[y][x]].color;
+          ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+          ctx.strokeStyle = "#cccccc";
+          ctx.strokeRect(x * tileSize, y * tileSize, tileSize, tileSize);
+        }
+      }
+    }
+
+    function copyLevel() {
+      // Deep copy level for undo/redo
+      return level.map(row => row.slice());
+    }
+
+    function saveState() {
+      undoStack.push(copyLevel());
+      if (undoStack.length > 50) undoStack.shift(); // limit undo stack size
+      redoStack = []; // clear redo on new action
+    }
+
+    function undo() {
+      if (undoStack.length === 0) return;
+      redoStack.push(copyLevel());
+      level = undoStack.pop();
+      drawGrid();
+    }
+
+    function redo() {
+      if (redoStack.length === 0) return;
+      undoStack.push(copyLevel());
+      level = redoStack.pop();
+      drawGrid();
+    }
+
+    function paintTile(x, y, tile) {
+      if (x >= 0 && x < cols && y >= 0 && y < rows) {
+        if(level[y][x] !== tile) {
+          level[y][x] = tile;
+          ctx.fillStyle = tileInfo[tile].color;
+          ctx.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+          ctx.strokeStyle = "#cccccc";
+          ctx.strokeRect(x * tileSize, y * tileSize, tileSize, tileSize);
+          return true;
+        }
+      }
+      return false;
+    }
+
+    canvas.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      isPainting = true;
+      const rect = canvas.getBoundingClientRect();
+      const x = Math.floor((e.clientX - rect.left) / tileSize);
+      const y = Math.floor((e.clientY - rect.top) / tileSize);
+
+      // Save current state before first paint on this drag
+      saveState();
+
+      // Right click eraser mode
+      const tileToPaint = (e.button === 2) ? TILE.EMPTY : currentBrush;
+      paintTile(x, y, tileToPaint);
+    });
+
+    canvas.addEventListener("mousemove", (e) => {
+      if (!isPainting) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = Math.floor((e.clientX - rect.left) / tileSize);
+      const y = Math.floor((e.clientY - rect.top) / tileSize);
+
+      // Right click eraser mode
+      const tileToPaint = (e.buttons === 2) ? TILE.EMPTY : currentBrush;
+      paintTile(x, y, tileToPaint);
+    });
+
+    canvas.addEventListener("mouseup", (e) => {
+      isPainting = false;
+    });
+
+    canvas.addEventListener("mouseleave", () => {
+      isPainting = false;
+    });
+
+    // Prevent context menu on right click inside canvas
+    canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
+    function selectBrush(brush) {
+      currentBrush = brush;
+      document.querySelectorAll("#brushButtons button").forEach(btn => btn.classList.remove("selected"));
+      document.getElementById("brush_" + brush).classList.add("selected");
+    }
+
+    function exportLevel() {
+      const text = "uint8_t levelMap[" + rows + "][" + cols + "] = {\n" +
+        level.map(row => "  {" + row.join(", ") + "}").join(",\n") +
+        "\n};";
+      document.getElementById("output").textContent = text;
+      navigator.clipboard.writeText(text).then(() => alert("Copied to clipboard!"));
+    }
+
+    function createBrushButtons() {
+      const container = document.getElementById("brushButtons");
+      container.innerHTML = '';
+      for (const [key, { name }] of Object.entries(tileInfo)) {
+        const btn = document.createElement("button");
+        btn.id = "brush_" + key;
+        btn.textContent = `${name} (${key})`;
+        btn.onclick = () => selectBrush(Number(key));
+        if (Number(key) === TILE.EMPTY) btn.classList.add("selected");
+        container.appendChild(btn);
+      }
+    }
+
+    // Init on page load
+    createBrushButtons();
+    initializeGrid();
+  </script>
+</body>
+</html>
+

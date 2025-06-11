@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>RGB565 Tile Editor & Converter</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; }
+    canvas { border: 1px solid #000; cursor: crosshair; }
+    pre {
+      white-space: pre-wrap;
+      background: #f0f0f0;
+      padding: 10px;
+      border-radius: 6px;
+      font-family: monospace;
+      max-width: 90%;
+      margin: 10px auto;
+      text-align: left;
+      user-select: all;
+    }
+    .controls { margin: 10px; }
+  </style>
+</head>
+<body>
+  <h2>RGB565 Tile Editor & Converter</h2>
+
+  <div class="controls">
+    Grid Size:
+    <input type="number" id="gridSize" value="10" min="1" max="64" style="width: 60px;">
+    <input type="color" id="colorPicker" value="#000000">
+    <button onclick="copyToClipboard()">Copy to Clipboard</button>
+  </div>
+
+  <input type="file" accept="image/*" id="fileInput"><br><br>
+  <canvas id="canvas" width="320" height="320"></canvas>
+  <pre id="output">// C array will appear here...</pre>
+
+  <script>
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const output = document.getElementById("output");
+    const gridSizeInput = document.getElementById("gridSize");
+    const colorPicker = document.getElementById("colorPicker");
+    const fileInput = document.getElementById("fileInput");
+
+    let gridSize = parseInt(gridSizeInput.value);
+    let cellSize = canvas.width / gridSize;
+    let drawing = false;
+
+    function clearCanvas() {
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    function drawGrid() {
+      ctx.strokeStyle = '#ccc';
+      for (let i = 0; i <= gridSize; i++) {
+        let pos = i * cellSize;
+        ctx.beginPath();
+        ctx.moveTo(pos, 0);
+        ctx.lineTo(pos, canvas.height);
+        ctx.moveTo(0, pos);
+        ctx.lineTo(canvas.width, pos);
+        ctx.stroke();
+      }
+    }
+
+    function updateCellSize() {
+      gridSize = parseInt(gridSizeInput.value);
+      cellSize = canvas.width / gridSize;
+    }
+
+    function redraw() {
+      clearCanvas();
+      drawGrid();
+      exportRGB565();
+    }
+
+    function rgbToRgb565(r, g, b) {
+      return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
+    }
+
+    function fillCell(evt) {
+      const rect = canvas.getBoundingClientRect();
+      const x = Math.floor((evt.clientX - rect.left) / cellSize);
+      const y = Math.floor((evt.clientY - rect.top) / cellSize);
+      ctx.fillStyle = colorPicker.value;
+      ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+      drawGrid(); // Redraw grid over color
+      exportRGB565();
+    }
+
+    function exportRGB565() {
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      let cArray = `uint16_t tile[${gridSize}][${gridSize}] = {\n`;
+
+      for (let y = 0; y < gridSize; y++) {
+        cArray += "    {";
+        for (let x = 0; x < gridSize; x++) {
+          const px = Math.floor(x * cellSize + cellSize / 2);
+          const py = Math.floor(y * cellSize + cellSize / 2);
+          const i = ((py * canvas.width) + px) * 4;
+          const r = imageData.data[i];
+          const g = imageData.data[i + 1];
+          const b = imageData.data[i + 2];
+          const rgb565 = rgbToRgb565(r, g, b);
+          cArray += `0x${rgb565.toString(16).padStart(4, '0').toUpperCase()}`;
+          if (x < gridSize - 1) cArray += ", ";
+        }
+        cArray += (y < gridSize - 1) ? "},\n" : "}\n";
+      }
+
+      cArray += "};";
+      output.textContent = cArray;
+    }
+
+    function copyToClipboard() {
+      navigator.clipboard.writeText(output.textContent)
+        .then(() => alert("C array copied to clipboard!"))
+        .catch(err => alert("Failed to copy: " + err));
+    }
+
+    // Drawing handlers
+// Prevent context menu on right-click
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
+canvas.addEventListener("mousedown", (e) => {
+  drawing = true;
+  currentButton = e.button;
+  fillCell(e);
+});
+
+canvas.addEventListener("mousemove", (e) => {
+  if (drawing) fillCell(e);
+});
+
+canvas.addEventListener("mouseup", () => {
+  drawing = false;
+});
+
+canvas.addEventListener("mouseleave", () => {
+  drawing = false;
+});
+
+function fillCell(evt) {
+  const rect = canvas.getBoundingClientRect();
+  const x = Math.floor((evt.clientX - rect.left) / cellSize);
+  const y = Math.floor((evt.clientY - rect.top) / cellSize);
+
+  // Determine color: right-click (button 2) draws white
+  const color = currentButton === 2 ? "#FFFFFF" : colorPicker.value;
+  ctx.fillStyle = color;
+  ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+  drawGrid();
+  exportRGB565();
+}
+
+
+
+
+    // Handle grid size change
+    gridSizeInput.addEventListener("input", () => {
+      updateCellSize();
+      redraw();
+    });
+
+    // Handle file input
+    fileInput.addEventListener("change", function () {
+      const file = this.files[0];
+      if (!file) return;
+
+      const img = new Image();
+      img.onload = () => {
+        // Resize image to gridSize x gridSize, then draw into canvas
+        const tempCanvas = document.createElement("canvas");
+        tempCanvas.width = gridSize;
+        tempCanvas.height = gridSize;
+        const tempCtx = tempCanvas.getContext("2d");
+        tempCtx.drawImage(img, 0, 0, gridSize, gridSize);
+
+        // Draw scaled image to main canvas
+        const imgData = tempCtx.getImageData(0, 0, gridSize, gridSize);
+        for (let y = 0; y < gridSize; y++) {
+          for (let x = 0; x < gridSize; x++) {
+            const i = (y * gridSize + x) * 4;
+            const r = imgData.data[i];
+            const g = imgData.data[i + 1];
+            const b = imgData.data[i + 2];
+            ctx.fillStyle = `rgb(${r},${g},${b})`;
+            ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+          }
+        }
+
+        drawGrid();
+        exportRGB565();
+      };
+
+      img.src = URL.createObjectURL(file);
+    });
+
+    // Initialize
+    updateCellSize();
+    redraw();
+  </script>
+</body>
+</html>
+
